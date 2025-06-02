@@ -1,0 +1,11 @@
+MODEL:
+  NAME: resnet
+DATA:
+  NUM_INSTANCES: 4
+  TRAIN_BATCH: 32
+LOSS:
+  CLA_LOSS: crossentropylabelsmooth
+  PAIR_LOSS: triplet
+  PAIR_M: 0.3
+  PAIR_LOSS_WEIGHT: 1.0
+TAG: resnet-cels-cal-tri-16x4
