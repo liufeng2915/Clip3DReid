@@ -1,0 +1,8 @@
+MODEL:
+  NAME: tinyvit
+LOSS:
+  CLA_LOSS: crossentropylabelsmooth
+  PAIR_LOSS: triplet
+  PAIR_M: 0.3
+  PAIR_LOSS_WEIGHT: 1.0
+TAG: tinyvit-cels-cal-tri-16x4

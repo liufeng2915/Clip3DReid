@@ -5,10 +5,10 @@ import clip
 import torch
 import torch.nn as nn
 from torch.nn import init
-from loss import Classifier, TripletLoss, CrossEntropyWithLabelSmooth
-from eval_metrics import evaluate
-import wandb
+from losses.cross_entropy_loss import Classifier
+from losses.triplet_loss import TripletLoss
 from tiny_vit import encoder_tinyvit
+
 
 def load_clip_to_cpu(clip_backbone_name):
 
@@ -31,11 +31,12 @@ class Model(nn.Module):
         super().__init__()
 
         ##
+        self.max_iter = 100
         feat_size = config.MODEL.FEATURE_DIM
         self.teacher_cla_w = config.LOSS.TEACHER_CLA
         self.student_cla_w = config.LOSS.STUDENT_CLA
-        self.image_alignment_w = config.LOSS.IMG_ALIGNMENT
-        self.text_alignment_w = config.LOSS.TEXT_ALIGNMENT
+        self.global_alignment_w = config.LOSS.GLOBAL_ALIGNMENT
+        self.local_alignment_w = config.LOSS.LOCAL_ALIGNMENT
 
         #  fc probe
         self.sv_fc = nn.Linear(576, feat_size)
@@ -51,11 +52,12 @@ class Model(nn.Module):
         # student TinyViT model
         self.student_encoder = encoder_tinyvit()
 
-        # classifier
-        self.classifier = Classifier(feature_dim=576, num_classes=num_classes)
+        # criterion
+        self.classifier = Classifier(feature_dim=feat_size, num_classes=num_classes)
         self.classifier_teacher = Classifier(feature_dim=feat_size, num_classes=num_classes)
         self.criterion_pair = TripletLoss(margin=0.3)
         self.criterion_cla = CrossEntropyWithLabelSmooth()
+        self.criterion_ot = SinkhornDistance(eps=0.1, max_iter=100, reduction='mean')
 
     def forward_clip_image_feature(self, clip_model, image):
 
@@ -72,7 +74,7 @@ class Model(nn.Module):
     def forward_feature(self, input_image):
 
         local_feat, global_feat = self.student_encoder(input_image)
-        #global_feat = self.sv_fc(global_feat)
+        global_feat = self.sv_fc(global_feat)
         #return self.sv_bn(global_feat), local_feat
         return global_feat, local_feat
 
@@ -85,6 +87,57 @@ class Model(nn.Module):
 
         return loss_kl
 
+    def Sinkhorn(self, K, u, v):
+        r = torch.ones_like(u)
+        c = torch.ones_like(v)
+        thresh = 1e-2
+        for i in range(self.max_iter):
+            r0 = r
+            r = u / torch.matmul(K, c.unsqueeze(-1)).squeeze(-1)
+            c = v / torch.matmul(K.permute(0, 2, 1).contiguous(), r.unsqueeze(-1)).squeeze(-1)
+            err = (r - r0).abs().mean()
+            if err.item() < thresh:
+                break
+
+        T = torch.matmul(r.unsqueeze(-1), c.unsqueeze(-2)) * K
+
+        return T
+
+    def ot_compute(self, student_local_feat, teacher_text_feat):
+
+        # student_local_feat: B*49*576
+        # teacher_text_feat: B*16*576
+        b = student_local_feat.shape[0]
+        eps = 0.1
+        student_local_feat = F.normalize(student_local_feat, dim=-1)
+        teacher_text_feat = F.normalize(teacher_text_feat, dim=-1)
+
+        sim = torch.einsum('bmd,bnd->bmn', student_local_feat, teacher_text_feat).contiguous()
+        wdist = 1.0 - sim
+        M = student_local_feat.shape[1]
+        N = teacher_text_feat.shape[1]
+        xx = torch.zeros(b, M, dtype=sim.dtype, device=sim.device).fill_(1. / M)
+        yy = torch.zeros(b, N, dtype=sim.dtype, device=sim.device).fill_(1. / N)
+
+        with torch.no_grad():
+            KK = torch.exp(-wdist / eps)
+            T = self.Sinkhorn(KK, xx, yy)
+        if torch.isnan(T).any():
+            return None
+
+        sim_op = torch.sum(T * sim, dim=(1, 2))
+
+        loss_sim = 1 - sim_op.mean()
+
+        # logit_scale = np.exp(self.logit_scale)
+        # logits = logit_scale * torch.bmm(global_gt_feat.unsqueeze(1), global_esti_feat.unsqueeze(2))
+        # logits = logits.squeeze(-1).squeeze(-1)
+        # logits2 = logit_scale * sim_op
+        # logits2 = logits + logits2
+
+        return loss_sim
+
+
     def forward(self, clip_model, text_feat, input_image, label):
 
         # # teacher and student features
@@ -95,7 +148,7 @@ class Model(nn.Module):
         # # Hard target loss
         # teacher
         teacher_logits = self.classifier_teacher(teacher_image_feat)
-        loss_teacher_cla = self.criterion_cla(teacher_logits, label) #+ self.criterion_pair(teacher_image_feat, label)
+        loss_teacher_cla = self.criterion_cla(teacher_logits, label) + self.criterion_pair(teacher_image_feat, label)
         # student
         student_logits = self.classifier(student_global_feat)
         loss_student_cla = self.criterion_cla(student_logits, label) + self.criterion_pair(student_global_feat, label)
@@ -103,13 +156,10 @@ class Model(nn.Module):
 
         # # Aignment loss
         # image feature alignment loss
-        loss_image_alignment = self.distill_kl_loss(teacher_logits, student_logits)
+        loss_global_alignment = self.distill_kl_loss(teacher_logits, student_logits)
         # text feature alignment loss
+        loss_local_alignment = self.ot_compute(student_local_feat, teacher_text_feat)
 
-        loss = self.image_alignment_w*loss_image_alignment + self.teacher_cla_w*loss_teacher_cla + self.student_cla_w*loss_student_cla
-        wandb.log({'loss': loss})
-        wandb.log({'loss_teacher_cla': loss_teacher_cla})
-        wandb.log({'loss_student_cla': loss_student_cla})
-        wandb.log({'loss_image_alignment': loss_image_alignment})
+        loss = self.local_alignment_w*loss_local_alignment+self.global_alignment_w*loss_global_alignment + self.teacher_cla_w*loss_teacher_cla + self.student_cla_w*loss_student_cla
         
         return loss, preds

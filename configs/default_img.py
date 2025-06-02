@@ -38,7 +38,7 @@ _C.AUG.RF_PROB = 0.5
 # -----------------------------------------------------------------------------
 _C.MODEL = CN()
 # Model name
-_C.MODEL.NAME = 'resnet'
+_C.MODEL.NAME = 'tinyvit' #resnets
 _C.MODEL.CLIP_NAME = 'ViT-L/14'
 # feature dim
 _C.MODEL.FEATURE_DIM = 512
@@ -108,7 +108,7 @@ _C.GPU = '0'
 # Path to output folder, overwritten by command line argument
 _C.OUTPUT = 'logs/'
 # Tag of experiment, overwritten by command line argument
-_C.TAG = 'resnet-ce-cal'
+_C.TAG = 'tinyvit-ce-cal'
 
 
 def update_config(config, args):

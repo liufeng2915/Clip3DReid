@@ -2,8 +2,6 @@ import math
 import torch
 import torch.nn.functional as F
 from torch import nn
-from losses.gather import GatherLayer
-
 
 class TripletLoss(nn.Module):
     """ Triplet loss with hard example mining.
@@ -27,25 +25,22 @@ class TripletLoss(nn.Module):
             inputs: sample features (before classifier) with shape (batch_size, feat_dim)
             targets: ground truth labels with shape (batch_size)
         """
-        # l2-normlize
-        inputs = F.normalize(inputs, p=2, dim=1)
 
-        # gather all samples from different GPUs as gallery to compute pairwise loss.
-        gallery_inputs = torch.cat(GatherLayer.apply(inputs), dim=0)
-        gallery_targets = torch.cat(GatherLayer.apply(targets), dim=0)
-
-        # compute distance
-        dist = 1 - torch.matmul(inputs, gallery_inputs.t()) # values in [0, 2]
-
-        # get positive and negative masks
-        targets, gallery_targets = targets.view(-1,1), gallery_targets.view(-1,1)
-        mask_pos = torch.eq(targets, gallery_targets.T).float().cuda()
-        mask_neg = 1 - mask_pos
-
-        # For each anchor, find the hardest positive and negative pairs
-        dist_ap, _ = torch.max((dist - mask_neg * 99999999.), dim=1)
-        dist_an, _ = torch.min((dist + mask_pos * 99999999.), dim=1)
-
+        n = inputs.size(0)
+        inputs = 1. * inputs / (torch.norm(inputs, 2, dim=-1, keepdim=True).expand_as(inputs) + 1e-12)
+        # Compute pairwise distance, replace by the official when merged
+        dist = torch.pow(inputs, 2).sum(dim=1, keepdim=True).expand(n, n)
+        dist = dist + dist.t()
+        dist.addmm_(1, -2, inputs, inputs.t())
+        dist = dist.clamp(min=1e-12).sqrt()  # for numerical stability
+        # For each anchor, find the hardest positive and negative
+        mask = targets.expand(n, n).eq(targets.expand(n, n).t())
+        dist_ap, dist_an = [], []
+        for i in range(n):
+            dist_ap.append(dist[i][mask[i]].max().unsqueeze(0))
+            dist_an.append(dist[i][mask[i] == 0].min().unsqueeze(0))
+        dist_ap = torch.cat(dist_ap)
+        dist_an = torch.cat(dist_an)
         # Compute ranking hinge loss
         y = torch.ones_like(dist_an)
         loss = self.ranking_loss(dist_an, dist_ap, y)

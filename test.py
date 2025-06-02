@@ -2,7 +2,6 @@ import time
 import torch
 import torch.nn.functional as F
 from tools.eval_metrics import evaluate, evaluate_with_clothes
-import wandb
 
 VID_DATASET = ['ccvid']
 
@@ -117,22 +116,12 @@ def test(config, model, queryloader, galleryloader, dataset):
     print("Results ---------------------------------------------------")
     print('top1:{:.1%} top5:{:.1%} top10:{:.1%} top20:{:.1%} mAP:{:.1%}'.format(cmc[0], cmc[4], cmc[9], cmc[19], mAP))
     print("-----------------------------------------------------------")
-    wandb.log({'Top1': cmc[0]})
-    wandb.log({'Top5': cmc[4]})
-    wandb.log({'Top10': cmc[9]})
-    wandb.log({'Top20': cmc[19]})
-    wandb.log({'mAP': mAP})
 
     print("Computing CMC and mAP only for clothes-changing")
     cmc, mAP = evaluate_with_clothes(distmat, q_pids, g_pids, q_camids, g_camids, q_clothes_ids, g_clothes_ids, mode='CC')
     print("Results ---------------------------------------------------")
     print('top1:{:.1%} top5:{:.1%} top10:{:.1%} top20:{:.1%} mAP:{:.1%}'.format(cmc[0], cmc[4], cmc[9], cmc[19], mAP))
     print("-----------------------------------------------------------")
-    wandb.log({'CC_Top1': cmc[0]})
-    wandb.log({'CC_Top5': cmc[4]})
-    wandb.log({'CC_Top10': cmc[9]})
-    wandb.log({'CC_Top20': cmc[19]})
-    wandb.log({'CC_mAP': mAP})
 
     return cmc[0]
 
@@ -175,21 +164,11 @@ def test_prcc(model, queryloader_same, queryloader_diff, galleryloader, dataset)
     print("Results ---------------------------------------------------")
     print('top1:{:.1%} top5:{:.1%} top10:{:.1%} top20:{:.1%} mAP:{:.1%}'.format(cmc[0], cmc[4], cmc[9], cmc[19], mAP))
     print("-----------------------------------------------------------")
-    wandb.log({'Top1': cmc[0]})
-    wandb.log({'Top5': cmc[4]})
-    wandb.log({'Top10': cmc[9]})
-    wandb.log({'Top20': cmc[19]})
-    wandb.log({'mAP': mAP})
 
     print("Computing CMC and mAP only for clothes changing")
     cmc, mAP = evaluate(distmat_diff, qd_pids, g_pids, qd_camids, g_camids)
     print("Results ---------------------------------------------------")
     print('top1:{:.1%} top5:{:.1%} top10:{:.1%} top20:{:.1%} mAP:{:.1%}'.format(cmc[0], cmc[4], cmc[9], cmc[19], mAP))
     print("-----------------------------------------------------------")
-    wandb.log({'CC_Top1': cmc[0]})
-    wandb.log({'CC_Top5': cmc[4]})
-    wandb.log({'CC_Top10': cmc[9]})
-    wandb.log({'CC_Top20': cmc[19]})
-    wandb.log({'CC_mAP': mAP})
 
     return cmc[0]
