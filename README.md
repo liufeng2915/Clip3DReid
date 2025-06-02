@@ -28,6 +28,13 @@ This code is developed with
 }
 ```
 
+## Acknowledgments
+
+Here are some great resources we benefit from:
+
+* [Simple-CCReID](https://github.com/guxinqian/Simple-CCReID) for person re-identification.
+
+
 ## License
 
 [MIT License](LICENSE)
