@@ -7,7 +7,7 @@ import torch.nn as nn
 from torch.nn import init
 from losses.cross_entropy_loss import Classifier
 from losses.triplet_loss import TripletLoss
-from tiny_vit import encoder_tinyvit
+from model.tiny_vit import encoder_tinyvit
 
 
 def load_clip_to_cpu(clip_backbone_name):
